@@ -1,0 +1,33 @@
+# Build artifacts
+.build/
+*.app/
+*.dSYM/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# IDE
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary/generated files
+*.textClipping
+TuxedoCat_Icon.*
+TuxedoCat_Icon.iconset/
+
+# Claude Code
+.claude/
