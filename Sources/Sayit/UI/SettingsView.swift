@@ -6,6 +6,8 @@ struct SettingsView: View {
     @State private var claudeKey: String = ""
     @State private var geminiSaved = false
     @State private var claudeSaved = false
+    @State private var geminiError = false
+    @State private var claudeError = false
 
     private let keychainManager = KeychainManager()
 
@@ -18,13 +20,17 @@ struct SettingsView: View {
                     HStack {
                         SecureField("Enter Gemini API Key", text: $geminiKey)
                             .textFieldStyle(.roundedBorder)
-                        Button(geminiSaved ? "Saved" : "Save") {
+                        Button(geminiSaved ? "Saved" : (geminiError ? "Failed" : "Save")) {
+                            geminiError = false
                             if keychainManager.save(key: geminiKey, for: .geminiAPIKey) {
                                 geminiSaved = true
                                 geminiKey = ""
+                            } else {
+                                geminiError = true
                             }
                         }
                         .disabled(geminiKey.isEmpty)
+                        .foregroundColor(geminiError ? .red : nil)
                     }
                     HStack(spacing: 4) {
                         Image(systemName: keychainManager.hasKey(.geminiAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -41,13 +47,17 @@ struct SettingsView: View {
                     HStack {
                         SecureField("Enter Claude API Key", text: $claudeKey)
                             .textFieldStyle(.roundedBorder)
-                        Button(claudeSaved ? "Saved" : "Save") {
+                        Button(claudeSaved ? "Saved" : (claudeError ? "Failed" : "Save")) {
+                            claudeError = false
                             if keychainManager.save(key: claudeKey, for: .claudeAPIKey) {
                                 claudeSaved = true
                                 claudeKey = ""
+                            } else {
+                                claudeError = true
                             }
                         }
                         .disabled(claudeKey.isEmpty)
+                        .foregroundColor(claudeError ? .red : nil)
                     }
                     HStack(spacing: 4) {
                         Image(systemName: keychainManager.hasKey(.claudeAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")

@@ -92,8 +92,9 @@ final class GeminiSTTService: Sendable {
                     - Fix grammar issues caused by speech recognition
                     - Do NOT change the meaning or add new content
                     - Preserve the original language and level of formality
+                    - Do NOT include any timestamps (e.g. 00:00, 00:01)
 
-                    Return ONLY the final refined text, nothing else.
+                    Return ONLY the final refined text as a single continuous paragraph, nothing else.
                     """),
                 ])
             ]

@@ -20,17 +20,24 @@ final class KeychainManager: Sendable {
         // Delete existing first
         delete(keyType: keyType)
 
-        guard let data = key.data(using: .utf8) else { return false }
+        guard let data = key.data(using: .utf8) else {
+            NSLog("[Sayit] KeychainManager: Failed to encode key data for \(keyType.rawValue)")
+            return false
+        }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
             kSecAttrAccount as String: keyType.rawValue,
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)
+        if status != errSecSuccess {
+            NSLog("[Sayit] KeychainManager: Save failed for \(keyType.rawValue), OSStatus: \(status)")
+        } else {
+            NSLog("[Sayit] KeychainManager: Saved \(keyType.rawValue) successfully")
+        }
         return status == errSecSuccess
     }
 
@@ -47,6 +54,9 @@ final class KeychainManager: Sendable {
         let status = SecItemCopyMatching(query as CFDictionary, &result)
 
         guard status == errSecSuccess, let data = result as? Data else {
+            if status != errSecItemNotFound {
+                NSLog("[Sayit] KeychainManager: Retrieve failed for \(keyType.rawValue), OSStatus: \(status)")
+            }
             return nil
         }
         return String(data: data, encoding: .utf8)

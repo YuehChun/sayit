@@ -2,11 +2,14 @@
 import Foundation
 
 final class AudioCaptureManager: @unchecked Sendable {
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var audioData = Data()
     private let sampleRate: Double = 8000
     private let lock = NSLock()
     private(set) var isRecording = false
+
+    // Generation counter to discard callbacks from old recording sessions
+    private var recordingGeneration: UInt64 = 0
 
     // Store converter/format as instance vars so tap closure doesn't hold dangling refs
     private var converter: AVAudioConverter?
@@ -14,6 +17,9 @@ final class AudioCaptureManager: @unchecked Sendable {
 
     func startRecording() throws {
         guard !isRecording else { return }
+
+        // Create a fresh engine to pick up current audio device and avoid stale buffers
+        engine = AVAudioEngine()
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
@@ -38,18 +44,25 @@ final class AudioCaptureManager: @unchecked Sendable {
         self.outputFormat = outFmt
         self.converter = conv
 
+        // Increment generation and clear buffer
+        recordingGeneration &+= 1
+        let currentGeneration = recordingGeneration
+
         lock.lock()
         audioData = Data()
         lock.unlock()
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
+            // Discard if this callback is from a stale session
+            guard self.recordingGeneration == currentGeneration else { return }
             self.convertAndAppend(buffer: buffer)
         }
 
         do {
             try engine.start()
             isRecording = true
+            NSLog("[Sayit] AudioCapture: Started recording (gen=%llu, inputRate=%.0f)", currentGeneration, inputFormat.sampleRate)
         } catch {
             // Clean up tap if engine failed to start
             inputNode.removeTap(onBus: 0)
@@ -64,6 +77,7 @@ final class AudioCaptureManager: @unchecked Sendable {
 
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        engine.reset()
         isRecording = false
         self.converter = nil
         self.outputFormat = nil
@@ -73,6 +87,7 @@ final class AudioCaptureManager: @unchecked Sendable {
         audioData = Data()
         lock.unlock()
 
+        NSLog("[Sayit] AudioCapture: Stopped recording, PCM size = %d bytes", pcmData.count)
         return createWAV(from: pcmData)
     }
 

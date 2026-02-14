@@ -7,6 +7,10 @@ final class PipelineOrchestrator {
     private let textInjectionService: TextInjectionService
     private weak var appState: AppState?
     private var errorDismissTask: Task<Void, Never>?
+    private var processingTask: Task<Void, Never>?
+
+    /// Minimum PCM audio bytes required (0.5s at 8kHz, 16-bit mono = 8000 bytes)
+    private let minimumAudioBytes = 8000
 
     init(
         audioCaptureManager: AudioCaptureManager,
@@ -22,6 +26,10 @@ final class PipelineOrchestrator {
 
     func startRecording() {
         guard let appState = appState else { return }
+
+        // Cancel any in-flight processing from previous recording
+        processingTask?.cancel()
+        processingTask = nil
 
         // Cancel any pending error dismiss
         errorDismissTask?.cancel()
@@ -44,56 +52,73 @@ final class PipelineOrchestrator {
 
         let wavData = audioCaptureManager.stopRecording()
 
-        guard !wavData.isEmpty else {
-            appState.recordingState = .error("No audio recorded")
+        // WAV header is 44 bytes; check actual audio content meets minimum duration
+        let pcmBytes = wavData.count - 44
+        guard pcmBytes >= minimumAudioBytes else {
+            NSLog("[Sayit] Pipeline: Audio too short (%d PCM bytes, min %d), skipping API call", pcmBytes, minimumAudioBytes)
+            appState.recordingState = .idle
+            appState.showFloatingPanel = false
+            appState.floatingPanelController?.hidePanel()
             return
         }
 
         appState.recordingState = .processing
-        NSLog("[Sayit] Pipeline: WAV data size = %d bytes", wavData.count)
+        NSLog("[Sayit] Pipeline: WAV data size = %d bytes (%.1fs audio)", wavData.count, Double(pcmBytes) / 16000.0)
 
-        do {
-            // Step 1: Speech to text + refinement (single API call)
-            NSLog("[Sayit] Pipeline: Starting Gemini STT+Refine...")
-            let result = try await geminiSTTService.transcribe(wavData: wavData)
+        // Wrap processing in a cancellable task
+        processingTask?.cancel()
+        processingTask = Task { [weak self] in
+            guard let self = self else { return }
 
-            // Re-check appState after await
-            guard let appState = self.appState else { return }
+            do {
+                // Step 1: Speech to text + refinement (single API call)
+                NSLog("[Sayit] Pipeline: Starting Gemini STT+Refine...")
+                let result = try await self.geminiSTTService.transcribe(wavData: wavData)
 
-            NSLog("[Sayit] Pipeline: Result = %@", result)
-            appState.refinedText = result
+                // Check cancellation after API call
+                try Task.checkCancellation()
 
-            // Step 2: Inject text
-            appState.recordingState = .injecting
-            appState.floatingPanelController?.hidePanel()
+                // Re-check appState after await
+                guard let appState = self.appState else { return }
 
-            // Small delay to let panel hide and target app regain focus
-            try await Task.sleep(for: .milliseconds(100))
+                NSLog("[Sayit] Pipeline: Result = %@", result)
+                appState.refinedText = result
 
-            NSLog("[Sayit] Pipeline: Injecting text...")
-            await textInjectionService.inject(text: result)
+                // Step 2: Inject text
+                appState.recordingState = .injecting
+                appState.floatingPanelController?.hidePanel()
 
-            // Re-check appState after await
-            guard let appState = self.appState else { return }
+                // Small delay to let panel hide and target app regain focus
+                try await Task.sleep(for: .milliseconds(100))
+                try Task.checkCancellation()
 
-            appState.recordingState = .idle
-            appState.showFloatingPanel = false
-            NSLog("[Sayit] Pipeline: Complete!")
-        } catch {
-            NSLog("[Sayit] Pipeline ERROR: %@", error.localizedDescription)
-            guard let appState = self.appState else { return }
-            appState.recordingState = .error(error.localizedDescription)
+                NSLog("[Sayit] Pipeline: Injecting text...")
+                await self.textInjectionService.inject(text: result)
 
-            // Auto-dismiss error after 3 seconds (cancellable)
-            errorDismissTask?.cancel()
-            errorDismissTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
-                guard let appState = self?.appState else { return }
-                if case .error = appState.recordingState {
-                    appState.recordingState = .idle
-                    appState.showFloatingPanel = false
-                    appState.floatingPanelController?.hidePanel()
+                // Re-check appState after await
+                guard let appState = self.appState else { return }
+
+                appState.recordingState = .idle
+                appState.showFloatingPanel = false
+                NSLog("[Sayit] Pipeline: Complete!")
+            } catch is CancellationError {
+                NSLog("[Sayit] Pipeline: Processing cancelled (new recording started)")
+            } catch {
+                NSLog("[Sayit] Pipeline ERROR: %@", error.localizedDescription)
+                guard let appState = self.appState else { return }
+                appState.recordingState = .error(error.localizedDescription)
+
+                // Auto-dismiss error after 3 seconds (cancellable)
+                self.errorDismissTask?.cancel()
+                self.errorDismissTask = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
+                    guard let appState = self?.appState else { return }
+                    if case .error = appState.recordingState {
+                        appState.recordingState = .idle
+                        appState.showFloatingPanel = false
+                        appState.floatingPanelController?.hidePanel()
+                    }
                 }
             }
         }

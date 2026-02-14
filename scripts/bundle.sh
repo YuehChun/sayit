@@ -53,7 +53,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 PLIST
 
 echo "Code signing..."
-codesign --force --deep --sign "Typeless Dev" --identifier "com.sayit.app" "$APP_BUNDLE"
+ENTITLEMENTS="$PROJECT_DIR/Resources/Sayit.entitlements"
+codesign --force --deep --sign "Typeless Dev" --entitlements "$ENTITLEMENTS" --identifier "com.sayit.app" "$APP_BUNDLE"
 
 echo "Done! App bundle created at: $APP_BUNDLE"
 echo "To run: open $APP_BUNDLE"
