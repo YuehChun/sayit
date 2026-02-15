@@ -133,26 +133,3 @@ final class GeminiSTTService: Sendable {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
-
-enum SayitError: LocalizedError {
-    case missingAPIKey(String)
-    case networkError(String)
-    case apiError(String, Int, String)
-    case emptyResponse(String)
-    case audioError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .missingAPIKey(let service):
-            return "\(service) API key not configured"
-        case .networkError(let msg):
-            return "Network error: \(msg)"
-        case .apiError(let service, let code, let msg):
-            return "\(service) API error (\(code)): \(msg)"
-        case .emptyResponse(let service):
-            return "\(service) returned empty response"
-        case .audioError(let msg):
-            return "Audio error: \(msg)"
-        }
-    }
-}

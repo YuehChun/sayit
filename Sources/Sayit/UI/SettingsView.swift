@@ -3,10 +3,13 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var appState: AppState
     @State private var geminiKey: String = ""
+    @State private var openRouterKey: String = ""
     @State private var claudeKey: String = ""
     @State private var geminiSaved = false
+    @State private var openRouterSaved = false
     @State private var claudeSaved = false
     @State private var geminiError = false
+    @State private var openRouterError = false
     @State private var claudeError = false
 
     private let keychainManager = KeychainManager()
@@ -17,6 +20,9 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Gemini API Key")
                         .font(.headline)
+                    Text("Primary STT provider")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     HStack {
                         SecureField("Enter Gemini API Key", text: $geminiKey)
                             .textFieldStyle(.roundedBorder)
@@ -36,6 +42,36 @@ struct SettingsView: View {
                         Image(systemName: keychainManager.hasKey(.geminiAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundColor(keychainManager.hasKey(.geminiAPIKey) ? .green : .red)
                         Text(keychainManager.hasKey(.geminiAPIKey) ? "Key configured" : "Not configured")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("OpenRouter API Key")
+                        .font(.headline)
+                    Text("Fallback STT provider (used when Gemini key is not set)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack {
+                        SecureField("Enter OpenRouter API Key", text: $openRouterKey)
+                            .textFieldStyle(.roundedBorder)
+                        Button(openRouterSaved ? "Saved" : (openRouterError ? "Failed" : "Save")) {
+                            openRouterError = false
+                            if keychainManager.save(key: openRouterKey, for: .openRouterAPIKey) {
+                                openRouterSaved = true
+                                openRouterKey = ""
+                            } else {
+                                openRouterError = true
+                            }
+                        }
+                        .disabled(openRouterKey.isEmpty)
+                        .foregroundColor(openRouterError ? .red : nil)
+                    }
+                    HStack(spacing: 4) {
+                        Image(systemName: keychainManager.hasKey(.openRouterAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(keychainManager.hasKey(.openRouterAPIKey) ? .green : .red)
+                        Text(keychainManager.hasKey(.openRouterAPIKey) ? "Key configured" : "Not configured")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -83,12 +119,20 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 380)
+        .frame(width: 450, height: 520)
         .onChange(of: geminiSaved) { _, newValue in
             if newValue {
                 Task {
                     try? await Task.sleep(for: .seconds(2))
                     geminiSaved = false
+                }
+            }
+        }
+        .onChange(of: openRouterSaved) { _, newValue in
+            if newValue {
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    openRouterSaved = false
                 }
             }
         }

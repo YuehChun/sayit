@@ -4,6 +4,8 @@ import Foundation
 final class PipelineOrchestrator {
     private let audioCaptureManager: AudioCaptureManager
     private let geminiSTTService: GeminiSTTService
+    private let openRouterSTTService: OpenRouterSTTService
+    private let keychainManager: KeychainManager
     private let textInjectionService: TextInjectionService
     private weak var appState: AppState?
     private var errorDismissTask: Task<Void, Never>?
@@ -15,11 +17,15 @@ final class PipelineOrchestrator {
     init(
         audioCaptureManager: AudioCaptureManager,
         geminiSTTService: GeminiSTTService,
+        openRouterSTTService: OpenRouterSTTService,
+        keychainManager: KeychainManager,
         textInjectionService: TextInjectionService,
         appState: AppState
     ) {
         self.audioCaptureManager = audioCaptureManager
         self.geminiSTTService = geminiSTTService
+        self.openRouterSTTService = openRouterSTTService
+        self.keychainManager = keychainManager
         self.textInjectionService = textInjectionService
         self.appState = appState
     }
@@ -71,9 +77,16 @@ final class PipelineOrchestrator {
             guard let self = self else { return }
 
             do {
-                // Step 1: Speech to text + refinement (single API call)
-                NSLog("[Sayit] Pipeline: Starting Gemini STT+Refine...")
-                let result = try await self.geminiSTTService.transcribe(wavData: wavData)
+                // Step 1: Speech to text + refinement
+                // Prefer Gemini if API key is configured, otherwise fall back to OpenRouter
+                let result: String
+                if self.keychainManager.hasKey(.geminiAPIKey) {
+                    NSLog("[Sayit] Pipeline: Starting Gemini STT+Refine...")
+                    result = try await self.geminiSTTService.transcribe(wavData: wavData)
+                } else {
+                    NSLog("[Sayit] Pipeline: Starting OpenRouter STT+Refine...")
+                    result = try await self.openRouterSTTService.transcribe(wavData: wavData)
+                }
 
                 // Check cancellation after API call
                 try Task.checkCancellation()

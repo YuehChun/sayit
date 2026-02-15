@@ -6,11 +6,13 @@ final class KeychainManager: Sendable {
 
     enum KeyType: String, CaseIterable {
         case geminiAPIKey = "gemini-api-key"
+        case openRouterAPIKey = "openrouter-api-key"
         case claudeAPIKey = "claude-api-key"
 
         var displayName: String {
             switch self {
             case .geminiAPIKey: return "Gemini API Key"
+            case .openRouterAPIKey: return "OpenRouter API Key"
             case .claudeAPIKey: return "Claude API Key"
             }
         }

@@ -62,12 +62,15 @@ final class AppState: ObservableObject {
 
         let keychainManager = KeychainManager()
         let geminiService = GeminiSTTService(keychainManager: keychainManager)
+        let openRouterService = OpenRouterSTTService(keychainManager: keychainManager)
         let textInjection = TextInjectionService()
         let audioCapture = AudioCaptureManager()
 
         let pipeline = PipelineOrchestrator(
             audioCaptureManager: audioCapture,
             geminiSTTService: geminiService,
+            openRouterSTTService: openRouterService,
+            keychainManager: keychainManager,
             textInjectionService: textInjection,
             appState: self
         )
