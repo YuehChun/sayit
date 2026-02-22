@@ -2,14 +2,11 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
-    @State private var geminiKey: String = ""
     @State private var openRouterKey: String = ""
-    @State private var claudeKey: String = ""
-    @State private var geminiSaved = false
     @State private var openRouterSaved = false
-    @State private var claudeSaved = false
-    @State private var geminiError = false
     @State private var openRouterError = false
+    @State private var claudeKey: String = ""
+    @State private var claudeSaved = false
     @State private var claudeError = false
 
     private let keychainManager = KeychainManager()
@@ -17,40 +14,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("API Keys") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Gemini API Key")
-                        .font(.headline)
-                    Text("Primary STT provider")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack {
-                        SecureField("Enter Gemini API Key", text: $geminiKey)
-                            .textFieldStyle(.roundedBorder)
-                        Button(geminiSaved ? "Saved" : (geminiError ? "Failed" : "Save")) {
-                            geminiError = false
-                            if keychainManager.save(key: geminiKey, for: .geminiAPIKey) {
-                                geminiSaved = true
-                                geminiKey = ""
-                            } else {
-                                geminiError = true
-                            }
-                        }
-                        .disabled(geminiKey.isEmpty)
-                        .foregroundColor(geminiError ? .red : nil)
-                    }
-                    HStack(spacing: 4) {
-                        Image(systemName: keychainManager.hasKey(.geminiAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(keychainManager.hasKey(.geminiAPIKey) ? .green : .red)
-                        Text(keychainManager.hasKey(.geminiAPIKey) ? "Key configured" : "Not configured")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
+                // OpenRouter
                 VStack(alignment: .leading, spacing: 8) {
                     Text("OpenRouter API Key")
                         .font(.headline)
-                    Text("Fallback STT provider (used when Gemini key is not set)")
+                    Text("Used as cloud STT fallback (google/gemini-2.5-flash)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     HStack {
@@ -71,12 +39,15 @@ struct SettingsView: View {
                     HStack(spacing: 4) {
                         Image(systemName: keychainManager.hasKey(.openRouterAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundColor(keychainManager.hasKey(.openRouterAPIKey) ? .green : .red)
-                        Text(keychainManager.hasKey(.openRouterAPIKey) ? "Key configured" : "Not configured")
+                        Text(keychainManager.hasKey(.openRouterAPIKey) ? "Key configured" : "Not configured (optional)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
 
+                Divider()
+
+                // Claude
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Claude API Key")
                         .font(.headline)
@@ -114,20 +85,13 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
 
                     Label("Microphone Access", systemImage: "mic.fill")
+                    Label("Speech Recognition", systemImage: "waveform")
                     Label("Accessibility (for global shortcuts & text injection)", systemImage: "lock.shield")
                 }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 520)
-        .onChange(of: geminiSaved) { _, newValue in
-            if newValue {
-                Task {
-                    try? await Task.sleep(for: .seconds(2))
-                    geminiSaved = false
-                }
-            }
-        }
+        .frame(width: 450, height: 420)
         .onChange(of: openRouterSaved) { _, newValue in
             if newValue {
                 Task {

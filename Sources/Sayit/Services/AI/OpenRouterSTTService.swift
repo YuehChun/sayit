@@ -2,14 +2,19 @@ import Foundation
 
 final class OpenRouterSTTService: Sendable {
     private let keychainManager: KeychainManager
-    private let model = "z-ai/glm-4.5-air:free"
-    private let endpoint = "https://openrouter.ai/api/v1/chat/completions"
+    private let model = "google/gemini-2.5-flash"
 
     init(keychainManager: KeychainManager) {
         self.keychainManager = keychainManager
     }
 
-    struct ChatRequest: Encodable {
+    var isConfigured: Bool {
+        keychainManager.hasKey(.openRouterAPIKey)
+    }
+
+    // MARK: - Request/Response types
+
+    private struct ChatRequest: Encodable {
         let model: String
         let messages: [Message]
 
@@ -21,42 +26,36 @@ final class OpenRouterSTTService: Sendable {
         struct ContentPart: Encodable {
             let type: String
             let text: String?
-            let inputAudio: InputAudio?
-
-            enum CodingKeys: String, CodingKey {
-                case type
-                case text
-                case inputAudio = "input_audio"
-            }
+            let input_audio: AudioData?
 
             init(text: String) {
                 self.type = "text"
                 self.text = text
-                self.inputAudio = nil
+                self.input_audio = nil
             }
 
-            init(audioData: String, format: String) {
+            init(audio: AudioData) {
                 self.type = "input_audio"
                 self.text = nil
-                self.inputAudio = InputAudio(data: audioData, format: format)
+                self.input_audio = audio
             }
         }
 
-        struct InputAudio: Encodable {
+        struct AudioData: Encodable {
             let data: String
             let format: String
         }
     }
 
-    struct ChatResponse: Decodable {
+    private struct ChatResponse: Decodable {
         let choices: [Choice]?
         let error: ResponseError?
 
         struct Choice: Decodable {
-            let message: ResponseMessage
+            let message: Message
         }
 
-        struct ResponseMessage: Decodable {
+        struct Message: Decodable {
             let content: String?
         }
 
@@ -64,6 +63,8 @@ final class OpenRouterSTTService: Sendable {
             let message: String
         }
     }
+
+    // MARK: - Transcription
 
     func transcribe(wavData: Data) async throws -> String {
         guard let apiKey = keychainManager.retrieve(keyType: .openRouterAPIKey) else {
@@ -78,6 +79,10 @@ final class OpenRouterSTTService: Sendable {
                 ChatRequest.Message(
                     role: "user",
                     content: [
+                        ChatRequest.ContentPart(audio: ChatRequest.AudioData(
+                            data: base64Audio,
+                            format: "wav"
+                        )),
                         ChatRequest.ContentPart(text: """
                         Transcribe this audio and refine the result. \
                         If the audio contains Mandarin Chinese, use Traditional Chinese (繁體中文). \
@@ -89,19 +94,19 @@ final class OpenRouterSTTService: Sendable {
                         - Fix grammar issues caused by speech recognition
                         - Do NOT change the meaning or add new content
                         - Preserve the original language and level of formality
-                        - Do NOT include any timestamps (e.g. 00:00, 00:01)
+                        - Do NOT include any timestamps
 
-                        Return ONLY the final refined text as a single continuous paragraph, nothing else.
+                        Return ONLY the final refined text, nothing else.
                         """),
-                        ChatRequest.ContentPart(audioData: base64Audio, format: "wav"),
                     ]
-                )
+                ),
             ]
         )
 
-        guard let url = URL(string: endpoint) else {
+        guard let url = URL(string: "https://openrouter.ai/api/v1/chat/completions") else {
             throw SayitError.networkError("Invalid API URL")
         }
+
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -131,28 +136,5 @@ final class OpenRouterSTTService: Sendable {
         }
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-enum SayitError: LocalizedError {
-    case missingAPIKey(String)
-    case networkError(String)
-    case apiError(String, Int, String)
-    case emptyResponse(String)
-    case audioError(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .missingAPIKey(let service):
-            return "\(service) API key not configured"
-        case .networkError(let msg):
-            return "Network error: \(msg)"
-        case .apiError(let service, let code, let msg):
-            return "\(service) API error (\(code)): \(msg)"
-        case .emptyResponse(let service):
-            return "\(service) returned empty response"
-        case .audioError(let msg):
-            return "Audio error: \(msg)"
-        }
     }
 }

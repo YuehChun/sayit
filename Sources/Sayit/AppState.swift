@@ -42,7 +42,6 @@ final class AppState: ObservableObject {
     private var servicesInitialized = false
 
     // Services (initialized after app launch)
-    var audioCaptureManager: AudioCaptureManager?
     var pipelineOrchestrator: PipelineOrchestrator?
     var globalShortcutManager: GlobalShortcutManager?
     var floatingPanelController: FloatingPanelController?
@@ -60,23 +59,25 @@ final class AppState: ObservableObject {
 
         NSLog("[Sayit] Setting up services...")
 
-        let keychainManager = KeychainManager()
-        let geminiService = GeminiSTTService(keychainManager: keychainManager)
-        let openRouterService = OpenRouterSTTService(keychainManager: keychainManager)
+        let speechService = AppleSpeechService()
         let textInjection = TextInjectionService()
-        let audioCapture = AudioCaptureManager()
+        let keychainManager = KeychainManager()
+        let openRouter = OpenRouterSTTService(keychainManager: keychainManager)
 
         let pipeline = PipelineOrchestrator(
-            audioCaptureManager: audioCapture,
-            geminiSTTService: geminiService,
-            openRouterSTTService: openRouterService,
-            keychainManager: keychainManager,
+            speechService: speechService,
             textInjectionService: textInjection,
+            openRouterService: openRouter,
             appState: self
         )
 
-        self.audioCaptureManager = audioCapture
         self.pipelineOrchestrator = pipeline
+
+        // Request speech recognition authorization
+        Task {
+            let status = await AppleSpeechService.requestAuthorization()
+            NSLog("[Sayit] Speech recognition authorization: %d", status.rawValue)
+        }
 
         let shortcutManager = GlobalShortcutManager { [weak self] isRecording in
             Task { @MainActor in
