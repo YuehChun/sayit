@@ -2,23 +2,56 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var appState: AppState
+    @State private var geminiKey: String = ""
+    @State private var geminiSaved = false
+    @State private var geminiError = false
     @State private var openRouterKey: String = ""
     @State private var openRouterSaved = false
     @State private var openRouterError = false
-    @State private var claudeKey: String = ""
-    @State private var claudeSaved = false
-    @State private var claudeError = false
 
     private let keychainManager = KeychainManager()
 
     var body: some View {
         Form {
             Section("API Keys") {
+                // Gemini
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Gemini API Key")
+                        .font(.headline)
+                    Text("Cloud STT provider (gemini-2.5-flash-lite)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack {
+                        SecureField("Enter Gemini API Key", text: $geminiKey)
+                            .textFieldStyle(.roundedBorder)
+                        Button(geminiSaved ? "Saved" : (geminiError ? "Failed" : "Save")) {
+                            geminiError = false
+                            if keychainManager.save(key: geminiKey, for: .geminiAPIKey) {
+                                geminiSaved = true
+                                geminiKey = ""
+                            } else {
+                                geminiError = true
+                            }
+                        }
+                        .disabled(geminiKey.isEmpty)
+                        .foregroundColor(geminiError ? .red : nil)
+                    }
+                    HStack(spacing: 4) {
+                        Image(systemName: keychainManager.hasKey(.geminiAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundColor(keychainManager.hasKey(.geminiAPIKey) ? .green : .red)
+                        Text(keychainManager.hasKey(.geminiAPIKey) ? "Key configured" : "Not configured (optional)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Divider()
+
                 // OpenRouter
                 VStack(alignment: .leading, spacing: 8) {
                     Text("OpenRouter API Key")
                         .font(.headline)
-                    Text("Used as cloud STT fallback (google/gemini-2.5-flash)")
+                    Text("Fallback when Gemini quota exceeded (google/gemini-2.5-flash)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     HStack {
@@ -44,36 +77,6 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-
-                Divider()
-
-                // Claude
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Claude API Key")
-                        .font(.headline)
-                    HStack {
-                        SecureField("Enter Claude API Key", text: $claudeKey)
-                            .textFieldStyle(.roundedBorder)
-                        Button(claudeSaved ? "Saved" : (claudeError ? "Failed" : "Save")) {
-                            claudeError = false
-                            if keychainManager.save(key: claudeKey, for: .claudeAPIKey) {
-                                claudeSaved = true
-                                claudeKey = ""
-                            } else {
-                                claudeError = true
-                            }
-                        }
-                        .disabled(claudeKey.isEmpty)
-                        .foregroundColor(claudeError ? .red : nil)
-                    }
-                    HStack(spacing: 4) {
-                        Image(systemName: keychainManager.hasKey(.claudeAPIKey) ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundColor(keychainManager.hasKey(.claudeAPIKey) ? .green : .red)
-                        Text(keychainManager.hasKey(.claudeAPIKey) ? "Key configured" : "Not configured")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
             }
 
             Section("Permissions") {
@@ -92,19 +95,19 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 450, height: 420)
+        .onChange(of: geminiSaved) { _, newValue in
+            if newValue {
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    geminiSaved = false
+                }
+            }
+        }
         .onChange(of: openRouterSaved) { _, newValue in
             if newValue {
                 Task {
                     try? await Task.sleep(for: .seconds(2))
                     openRouterSaved = false
-                }
-            }
-        }
-        .onChange(of: claudeSaved) { _, newValue in
-            if newValue {
-                Task {
-                    try? await Task.sleep(for: .seconds(2))
-                    claudeSaved = false
                 }
             }
         }

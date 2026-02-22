@@ -10,7 +10,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Sayit",
-            path: "Sources/Sayit"
+            path: "Sources/Sayit",
+            exclude: ["Info.plist"]
         )
     ]
 )

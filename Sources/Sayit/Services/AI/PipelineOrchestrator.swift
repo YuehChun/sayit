@@ -4,6 +4,7 @@ import Foundation
 final class PipelineOrchestrator {
     private let speechService: AppleSpeechService
     private let textInjectionService: TextInjectionService
+    private let geminiService: GeminiSTTService?
     private let openRouterService: OpenRouterSTTService?
     private weak var appState: AppState?
     private var errorDismissTask: Task<Void, Never>?
@@ -12,11 +13,13 @@ final class PipelineOrchestrator {
     init(
         speechService: AppleSpeechService,
         textInjectionService: TextInjectionService,
+        geminiService: GeminiSTTService?,
         openRouterService: OpenRouterSTTService?,
         appState: AppState
     ) {
         self.speechService = speechService
         self.textInjectionService = textInjectionService
+        self.geminiService = geminiService
         self.openRouterService = openRouterService
         self.appState = appState
 
@@ -71,22 +74,12 @@ final class PipelineOrchestrator {
 
                 var result = appleResult
 
-                // If Apple Speech returned empty and OpenRouter is configured, try cloud STT
-                if result.isEmpty, let openRouter = self.openRouterService, openRouter.isConfigured {
-                    NSLog("[Sayit] Pipeline: Apple Speech empty, trying OpenRouter fallback...")
-                    if let wavData = self.speechService.getRecordedWAVData() {
-                        do {
-                            result = try await openRouter.transcribe(wavData: wavData)
-                            NSLog("[Sayit] Pipeline: OpenRouter result = %@", result)
-                        } catch {
-                            NSLog("[Sayit] Pipeline: OpenRouter fallback failed: %@", error.localizedDescription)
-                        }
-                    } else {
-                        NSLog("[Sayit] Pipeline: No audio data available for OpenRouter fallback")
-                    }
+                // Fallback chain: Apple Speech → Gemini → OpenRouter
+                if result.isEmpty {
+                    NSLog("[Sayit] Pipeline: Apple Speech empty, trying cloud STT fallback...")
+                    result = try await self.tryCloudSTT()
+                    try Task.checkCancellation()
                 }
-
-                try Task.checkCancellation()
 
                 guard !result.isEmpty else {
                     NSLog("[Sayit] Pipeline: No speech detected, skipping")
@@ -136,5 +129,45 @@ final class PipelineOrchestrator {
                 }
             }
         }
+    }
+
+    /// Fallback chain: Gemini → OpenRouter (on quota/rate-limit error)
+    private func tryCloudSTT() async throws -> String {
+        guard let wavData = speechService.getRecordedWAVData() else {
+            NSLog("[Sayit] Pipeline: No audio data available for cloud STT")
+            return ""
+        }
+
+        // Try Gemini first
+        if let gemini = geminiService, gemini.isConfigured {
+            do {
+                let result = try await gemini.transcribe(wavData: wavData)
+                NSLog("[Sayit] Pipeline: Gemini result = %@", result)
+                return result
+            } catch let error as SayitError {
+                if case .apiError(_, let code, _) = error, code == 429 || code == 503 {
+                    // Quota exceeded or service unavailable — fall through to OpenRouter
+                    NSLog("[Sayit] Pipeline: Gemini quota/rate-limit hit (%d), trying OpenRouter...", code)
+                } else {
+                    NSLog("[Sayit] Pipeline: Gemini error: %@", error.localizedDescription)
+                    // For other errors, still try OpenRouter as fallback
+                }
+            } catch {
+                NSLog("[Sayit] Pipeline: Gemini error: %@", error.localizedDescription)
+            }
+        }
+
+        // Try OpenRouter as final fallback
+        if let openRouter = openRouterService, openRouter.isConfigured {
+            do {
+                let result = try await openRouter.transcribe(wavData: wavData)
+                NSLog("[Sayit] Pipeline: OpenRouter result = %@", result)
+                return result
+            } catch {
+                NSLog("[Sayit] Pipeline: OpenRouter error: %@", error.localizedDescription)
+            }
+        }
+
+        return ""
     }
 }

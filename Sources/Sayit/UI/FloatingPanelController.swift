@@ -41,11 +41,11 @@ final class FloatingPanelController {
         let hostingView = NSHostingView(rootView: FloatingPanelView(appState: appState))
         panel.contentView = hostingView
 
-        // Position at top-center of main screen
+        // Position at bottom-center of main screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.midX - 160
-            let y = screenFrame.maxY - 80
+            let y = screenFrame.minY + 20
             panel.setFrameOrigin(NSPoint(x: x, y: y))
         }
 

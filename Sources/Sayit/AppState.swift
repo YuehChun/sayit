@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AVFoundation
 
 enum RecordingState: Equatable {
     case idle
@@ -62,21 +63,25 @@ final class AppState: ObservableObject {
         let speechService = AppleSpeechService()
         let textInjection = TextInjectionService()
         let keychainManager = KeychainManager()
+        let gemini = GeminiSTTService(keychainManager: keychainManager)
         let openRouter = OpenRouterSTTService(keychainManager: keychainManager)
 
         let pipeline = PipelineOrchestrator(
             speechService: speechService,
             textInjectionService: textInjection,
+            geminiService: gemini,
             openRouterService: openRouter,
             appState: self
         )
 
         self.pipelineOrchestrator = pipeline
 
-        // Request speech recognition authorization
+        // Request all permissions at startup
         Task {
-            let status = await AppleSpeechService.requestAuthorization()
-            NSLog("[Sayit] Speech recognition authorization: %d", status.rawValue)
+            let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
+            NSLog("[Sayit] Microphone authorization: %@", micGranted ? "granted" : "denied")
+            let speechStatus = await AppleSpeechService.requestAuthorization()
+            NSLog("[Sayit] Speech recognition authorization: %d", speechStatus.rawValue)
         }
 
         let shortcutManager = GlobalShortcutManager { [weak self] isRecording in
