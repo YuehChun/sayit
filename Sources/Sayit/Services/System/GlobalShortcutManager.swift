@@ -37,7 +37,9 @@ final class GlobalShortcutManager: @unchecked Sendable {
     func start() {
         registerCarbonHotKey()
 
-        let trusted = AXIsProcessTrusted()
+        // Prompt user to grant Accessibility if not already trusted
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(options)
         NSLog("[Sayit] AXIsProcessTrusted = %@", trusted ? "YES" : "NO")
 
         if tryEventTap(option: .defaultTap, label: "defaultTap") { return }

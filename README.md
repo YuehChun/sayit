@@ -5,26 +5,33 @@ AI-powered speech-to-text input for macOS. Speak naturally and get polished, pub
 ## How It Works
 
 ```
-Microphone Audio → [Gemini API: Speech-to-Text] → Raw Text → [Text Refinement] → Polished Output → Target App
+Microphone → [Apple Speech: On-Device STT] → Raw Text
+                     ↓ (empty?)
+             [Gemini API: Cloud STT] → Refined Text
+                     ↓ (quota exceeded?)
+             [OpenRouter API: Fallback STT] → Refined Text
+                     ↓
+              Text Injection → Target App
 ```
 
-Sayit captures your voice via a global keyboard shortcut, transcribes it using Google Gemini's multimodal audio API, refines the raw transcript (removing filler words, fixing grammar, adding punctuation), and injects the final text into whatever app you're using.
+Sayit captures your voice via a global keyboard shortcut, transcribes it using a 3-tier fallback chain (Apple Speech → Gemini → OpenRouter), and injects the final text into whatever app you're using.
 
 ## Features
 
-- **Global Push-to-Talk** — Hold `Right Option (⌥)` anywhere in macOS to start recording, release to process
-- **AI-Powered Transcription** — Google Gemini API for high-accuracy speech recognition
-- **Smart Text Refinement** — Automatically cleans up filler words, repetitions, and grammar issues
+- **Global Push-to-Talk** — Hold `Fn` key anywhere in macOS to start recording, release to process. `Option+R` as alternative toggle.
+- **3-Tier STT Fallback** — Apple Speech (on-device) → Gemini API → OpenRouter, automatic failover
+- **Smart Text Refinement** — Cloud STT automatically cleans up filler words, repetitions, and grammar issues
 - **Multi-Language Support** — Traditional Chinese, English, and mixed-language (code-switching) support
 - **Universal Text Injection** — Injects text into any macOS app via Accessibility API
-- **Floating Panel** — Minimal floating window shows recording status and live progress
+- **Floating Panel** — Minimal floating window at screen bottom shows recording status and live progress
 - **Menu Bar App** — Lives in your menu bar, zero interference with your workflow
 
 ## Requirements
 
 - macOS 15.0 (Sequoia) or later
 - Apple Silicon or Intel Mac
-- [Google Gemini API Key](https://aistudio.google.com/apikey)
+- [Google Gemini API Key](https://aistudio.google.com/apikey) (optional, for cloud STT)
+- [OpenRouter API Key](https://openrouter.ai/keys) (optional, fallback when Gemini quota exceeded)
 
 ## Getting Started
 
@@ -38,16 +45,25 @@ cd sayit
 # Build
 swift build
 
-# Build release & create .app bundle
-./scripts/bundle.sh
+# Install to /Applications
+cp .build/debug/Sayit /Applications/Sayit.app/Contents/MacOS/Sayit
+codesign --force --sign - --identifier com.sayit.app /Applications/Sayit.app
 ```
 
 ### Setup
 
 1. Launch Sayit — it appears in your menu bar
-2. Open **Settings** and enter your **Gemini API Key**
-3. Grant **Microphone** and **Accessibility** permissions when prompted
-4. Hold `Right Option (⌥)` to record, release to transcribe and inject
+2. Grant **Microphone**, **Speech Recognition**, and **Accessibility** permissions when prompted
+3. (Optional) Open **Settings** and enter your **Gemini API Key** and/or **OpenRouter API Key** for cloud STT
+4. Hold `Fn` to record, release to transcribe and inject. Or use `Option+R` to toggle.
+
+## STT Fallback Chain
+
+| Priority | Provider | Model | Cost | Notes |
+|----------|----------|-------|------|-------|
+| 1 | Apple Speech | On-device | Free | Primary, no API key needed |
+| 2 | Gemini API | gemini-2.5-flash-lite | ~$0.30/M tokens | Cloud STT when Apple Speech returns empty |
+| 3 | OpenRouter | google/gemini-2.5-flash | ~$1/M audio tokens | Fallback when Gemini quota exceeded (429/503) |
 
 ## Architecture
 
@@ -55,22 +71,24 @@ swift build
 Sources/Sayit/
 ├── SayitApp.swift                    # App entry point
 ├── AppState.swift                    # Global state management
+├── SayitError.swift                  # Error types
 ├── Services/
 │   ├── AI/
-│   │   ├── GeminiSTTService.swift        # Gemini speech-to-text
-│   │   └── PipelineOrchestrator.swift    # Recording → STT → Refinement pipeline
+│   │   ├── GeminiSTTService.swift        # Gemini cloud STT
+│   │   ├── OpenRouterSTTService.swift    # OpenRouter cloud STT fallback
+│   │   └── PipelineOrchestrator.swift    # Recording → STT → Injection pipeline
 │   ├── Audio/
-│   │   └── AudioCaptureManager.swift     # Microphone capture (AVAudioEngine)
+│   │   └── AppleSpeechService.swift      # macOS native STT (SFSpeechRecognizer)
 │   ├── Data/
 │   │   └── KeychainManager.swift         # Secure API key storage (macOS Keychain)
 │   └── System/
-│       ├── GlobalShortcutManager.swift   # Global keyboard shortcut listener
+│       ├── GlobalShortcutManager.swift   # Fn key & Option+R shortcuts
 │       └── TextInjectionService.swift    # Text injection via Accessibility API
 └── UI/
     ├── FloatingPanelController.swift     # NSPanel window controller
     ├── FloatingPanelView.swift           # Recording status & progress UI
     ├── MenuBarView.swift                 # Menu bar interface
-    └── SettingsView.swift                # API key & preferences
+    └── SettingsView.swift                # API key & permissions settings
 ```
 
 ## Tech Stack
@@ -78,7 +96,8 @@ Sources/Sayit/
 | Component | Technology |
 |-----------|-----------|
 | Platform | macOS (Swift 6 / SwiftUI) |
-| Speech-to-Text | Google Gemini API (`gemini-2.5-flash-lite`) |
+| Primary STT | Apple Speech Framework (SFSpeechRecognizer) |
+| Cloud STT | Google Gemini API, OpenRouter API |
 | Audio Capture | AVFoundation / AVAudioEngine |
 | System Integration | macOS Accessibility API, CGEvent |
 | Key Storage | macOS Keychain |
