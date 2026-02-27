@@ -9,6 +9,7 @@ final class PipelineOrchestrator {
     private weak var appState: AppState?
     private var errorDismissTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
+    private var recordingStartTime: Date?
 
     init(
         speechService: AppleSpeechService,
@@ -44,6 +45,7 @@ final class PipelineOrchestrator {
 
         do {
             try speechService.startRecording()
+            recordingStartTime = Date()
             appState.recordingState = .recording
             appState.rawTranscript = ""
             appState.refinedText = ""
@@ -57,10 +59,33 @@ final class PipelineOrchestrator {
     func stopRecordingAndProcess() async {
         guard let appState = appState else { return }
 
+        // Calculate recording duration
+        let recordingDuration: TimeInterval
+        if let start = recordingStartTime {
+            recordingDuration = Date().timeIntervalSince(start)
+        } else {
+            recordingDuration = 0
+        }
+        recordingStartTime = nil
+
+        NSLog("[Sayit] Pipeline: Recording duration = %.1f seconds", recordingDuration)
+
+        // Discard short recordings (< 3 seconds) — likely noise/silence
+        if recordingDuration < 3.0 {
+            NSLog("[Sayit] Pipeline: Recording too short (%.1fs < 3s), discarding", recordingDuration)
+            _ = await speechService.stopAndTranscribe()
+            appState.recordingState = .idle
+            appState.rawTranscript = ""
+            appState.showFloatingPanel = false
+            appState.floatingPanelController?.hidePanel()
+            return
+        }
+
         appState.recordingState = .processing
 
         // Wrap processing in a cancellable task
         processingTask?.cancel()
+        let needsRefinement = recordingDuration > 10.0
         processingTask = Task { [weak self] in
             guard let self = self else { return }
 
@@ -87,6 +112,24 @@ final class PipelineOrchestrator {
                     appState.showFloatingPanel = false
                     appState.floatingPanelController?.hidePanel()
                     return
+                }
+
+                // For longer recordings (> 10s), refine text via OpenRouter to remove filler words
+                if needsRefinement {
+                    NSLog("[Sayit] Pipeline: Long recording (>10s), refining text via OpenRouter...")
+                    if let openRouter = self.openRouterService, openRouter.isConfigured {
+                        do {
+                            let refined = try await openRouter.refineText(result)
+                            try Task.checkCancellation()
+                            NSLog("[Sayit] Pipeline: Refined result = %@", refined)
+                            result = refined
+                        } catch {
+                            NSLog("[Sayit] Pipeline: Text refinement failed, using original: %@", error.localizedDescription)
+                            // Fall through with original result
+                        }
+                    } else {
+                        NSLog("[Sayit] Pipeline: OpenRouter not configured, skipping text refinement")
+                    }
                 }
 
                 NSLog("[Sayit] Pipeline: Result = %@", result)
