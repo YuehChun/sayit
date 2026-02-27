@@ -20,7 +20,8 @@ Sayit captures your voice via a global keyboard shortcut, transcribes it using a
 
 - **Global Push-to-Talk** — Hold `Fn` key anywhere in macOS to start recording, release to process. `Option+R` as alternative toggle.
 - **3-Tier STT Fallback** — Apple Speech (on-device) → Gemini API → OpenRouter, automatic failover
-- **Smart Text Refinement** — Cloud STT automatically cleans up filler words, repetitions, and grammar issues
+- **Short Recording Filter** — Recordings under 3 seconds are automatically discarded (likely noise/accidental triggers)
+- **Smart Text Refinement** — Recordings over 10 seconds are automatically refined via OpenRouter to remove filler words (嗯、啊、呃、那個) and redundancies
 - **Multi-Language Support** — Traditional Chinese, English, and mixed-language (code-switching) support
 - **Universal Text Injection** — Injects text into any macOS app via Accessibility API
 - **Floating Panel** — Minimal floating window at screen bottom shows recording status and live progress
